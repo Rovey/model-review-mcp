@@ -140,7 +140,8 @@ The model sits on a 10 mm grid, with a heavier line every 50 mm. Parts from Bamb
 ```sh
 git clone https://github.com/Rovey/model-review-mcp
 cd model-review-mcp
-uv run python tests/smoke_test.py path/to/model.3mf
+uv run pytest -q                                      # unit tests
+uv run python tests/smoke_test.py path/to/model.3mf   # end-to-end check, prints "ok: ..."
 ```
 
 To run your checkout from an MCP client, use `uv run --directory /path/to/model-review-mcp model-review-mcp` as the command. Contributor and agent notes are in [AGENTS.md](AGENTS.md).
