@@ -151,11 +151,11 @@ def test_guard_rejects_foreign_host_or_origin(port, host, origin):
     if origin:
         headers["Origin"] = origin.format(port=port)
     assert request(port, "GET", "/meta", headers) == (403, b"Forbidden")
-    assert request(port, "POST", "/comments", headers, b'{"notes": []}') == (403, b"Forbidden")
+    assert request(port, "POST", "/comments", headers, b"") == (403, b"Forbidden")
 
 
 def test_guard_passes_post_from_the_viewer(port):
     local = f"127.0.0.1:{port}"
     # passes the guard and stops at the next check: no model is open
-    status, body = request(port, "POST", "/comments", {"Host": local, "Origin": f"http://{local}"}, b'{"notes": []}')
+    status, body = request(port, "POST", "/comments", {"Host": local, "Origin": f"http://{local}"}, b"")
     assert (status, body) == (409, b"No model is open")
