@@ -24,3 +24,12 @@ model-review-mcp = "model_review_mcp.server:main"
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# tests/smoke_test.py is a script that needs a model file argument; keep it out of collection
+python_files = ["test_*.py"]
