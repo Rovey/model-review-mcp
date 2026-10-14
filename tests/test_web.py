@@ -5,8 +5,8 @@ import http.client
 
 import pytest
 
-from model_review_mcp import server
-from model_review_mcp.server import MAX_TEXT, clean_note, save_image
+from model_review_mcp import server, web
+from model_review_mcp.web import MAX_TEXT, clean_note, save_image
 
 JPEG = b"\xff\xd8\xff\xd9"
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -94,7 +94,7 @@ def test_clean_note_turns_null_text_into_the_word_none(tmp_path):
 @pytest.fixture(scope="module")
 def port(tmp_path_factory):
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(server, "PORT", 0)  # free port; never the live viewer's 8765
+        mp.setattr(web, "PORT", 0)  # free port; never the live viewer's 8765
         mp.setattr(server, "REVIEWS", tmp_path_factory.mktemp("reviews"))
         mp.setattr(server.webbrowser, "open", lambda url: None)
         mp.setitem(server.state, "dir", None)

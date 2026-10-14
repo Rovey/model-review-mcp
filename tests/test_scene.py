@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from model_review_mcp.server import GAP, build_scene, load_3mf
+from model_review_mcp.scene import GAP, build_scene, load_3mf
 
 IDENTITY = "1 0 0 0 1 0 0 0 1"
 ROTATE_Z_90 = "0 1 0 -1 0 0 0 0 1"  # 3MF row-vector form: x -> y, y -> -x
