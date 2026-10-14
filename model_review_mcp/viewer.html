@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Review</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --mat: #1e4a3b;          /* cutting mat */
+    --mat-deep: #173b2f;
+    --paper: #eef2ee;
+    --paper-edge: #d3dcd6;
+    --ink: #18221e;
+    --ink-soft: #56645d;
+    --tag: #f4c430;          /* inspection tag */
+    --tag-ink: #1b1a12;
+    --alert: #b3412e;
+    --field: #ffffff;
+    --primary-hover: #2b3933;
+    color-scheme: light;
+    --font: "Barlow", system-ui, sans-serif;
+    --font-cond: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  }
+  /* dark theme: follows the system unless the user picked one (data-theme on <html>) */
+  :root[data-theme="dark"] {
+    --mat: #153629;
+    --mat-deep: #0d241b;
+    --paper: #1a221e;
+    --paper-edge: #2c3832;
+    --ink: #e3eae5;
+    --ink-soft: #98a69e;
+    --field: #121915;
+    --primary-hover: #cbd5cf;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --mat: #153629;
+      --mat-deep: #0d241b;
+      --paper: #1a221e;
+      --paper-edge: #2c3832;
+      --ink: #e3eae5;
+      --ink-soft: #98a69e;
+      --field: #121915;
+      --primary-hover: #cbd5cf;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) 360px; background: var(--mat); color: var(--ink); font: 15px/1.45 var(--font); }
+  button, textarea, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--tag); outline-offset: 2px; }
+
+  /* model view */
+  #stage { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 50% 40%, var(--mat) 55%, var(--mat-deep)); }
+  #stage canvas { display: block; cursor: crosshair; }
+  #stage canvas.dragging { cursor: grabbing; }
+  .views { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 2px; background: rgb(0 0 0 / .22); padding: 3px; border-radius: 8px; }
+  .views button { background: none; border: 0; color: #e7efe9; padding: 5px 11px; border-radius: 6px; cursor: pointer; }
+  .views button:hover { background: rgb(255 255 255 / .12); }
+  .help { position: absolute; right: 16px; bottom: 20px; color: rgb(231 239 233 / .7); font-size: 13px; pointer-events: none; text-align: right; }
+  .help kbd { font: inherit; border: 1px solid rgb(231 239 233 / .35); border-radius: 4px; padding: 0 5px; }
+  #banner { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: var(--paper); color: var(--ink); border: 0; border-radius: 8px; padding: 8px 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); cursor: pointer; display: none; }
+  #empty { position: absolute; inset: 0; display: none; place-content: center; text-align: center; color: #e7efe9; padding: 24px; }
+  #empty p { margin: 4px 0; max-width: 36ch; }
+
+  /* pins */
+  .pin { font: 600 15px/1 var(--font-cond); color: var(--tag-ink); background: var(--tag); min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px 12px 12px 3px;
+         display: grid; place-items: center; transform: translate(0, -100%); box-shadow: 0 2px 6px rgb(0 0 0 / .35); pointer-events: auto; cursor: pointer; }
+  .pin.draft { background: #fff; }
+  .pin.focus { outline: 2px solid #fff; }
+  @media (prefers-reduced-motion: no-preference) { .pin.new { animation: drop .22s ease-out; } }
+  @keyframes drop { from { transform: translate(0, -160%); opacity: 0; } }
+
+  /* note editor */
+  #editor { position: absolute; display: none; width: 280px; background: var(--paper); border-radius: 10px; padding: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / .35); }
+  #editor .where { font-size: 13px; color: var(--ink-soft); margin: 0 0 6px; font-variant-numeric: tabular-nums; }
+  textarea { width: 100%; resize: vertical; background: var(--field); border: 1px solid var(--paper-edge); border-radius: 6px; padding: 7px 9px; }
+  textarea:focus { border-color: var(--ink-soft); outline: none; }
+  .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .btn { border: 1px solid var(--paper-edge); background: var(--field); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  .btn:hover { border-color: var(--ink-soft); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 600; }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  /* report sheet */
+  aside { background: var(--paper); display: flex; flex-direction: column; min-height: 0; height: 100vh; }
+  header { padding: 20px 20px 14px; border-bottom: 1px solid var(--paper-edge); display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  #theme { flex: none; display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid var(--paper-edge); border-radius: 6px; padding: 4px 9px; color: var(--ink-soft); font-size: 13px; cursor: pointer; }
+  #theme:hover { color: var(--ink); border-color: var(--ink-soft); }
+  #theme svg { width: 15px; height: 15px; }
+  h1 { font: 600 26px/1.1 var(--font-cond); margin: 0; overflow-wrap: anywhere; }
+  header p { margin: 4px 0 0; color: var(--ink-soft); font-size: 14px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  .block { padding: 14px 20px; border-bottom: 1px solid var(--paper-edge); }
+  #parts { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; }
+  #parts label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  #parts input { accent-color: var(--ink); margin: 0; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--ink-soft) 55%, transparent); flex: none; }
+  .notes { flex: 1; overflow: auto; min-height: 0; }
+  #notes { list-style: none; margin: 0; padding: 0; }
+  #notes li { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--paper-edge); }
+  #notes li:first-child { border-top: 0; }
+  #notes .num { font: 600 15px/24px var(--font-cond); background: var(--tag); color: var(--tag-ink); border-radius: 12px 12px 12px 3px; text-align: center; height: 24px; border: 0; cursor: pointer; padding: 0; }
+  #notes .text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #notes .meta { margin: 2px 0 0; color: var(--ink-soft); font-size: 13px; font-variant-numeric: tabular-nums; }
+  #notes .remove { background: none; border: 0; color: var(--ink-soft); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 18px; line-height: 1; }
+  #notes .remove:hover { color: var(--alert); background: rgb(179 65 46 / .08); }
+  .placeholder { color: var(--ink-soft); margin: 0; max-width: 34ch; }
+  footer { padding: 14px 20px 20px; border-top: 1px solid var(--paper-edge); }
+  footer .row { justify-content: space-between; align-items: center; }
+  #status { color: var(--ink-soft); font-size: 13px; }
+  #status.error { color: var(--alert); }
+
+  @media (max-width: 820px) {
+    html, body { height: auto; }
+    body { grid-template-columns: 1fr; grid-template-rows: 58vh auto; }
+    aside { height: auto; min-height: 42vh; }
+    .notes { flex: none; overflow: visible; }
+    .help { display: none; }
+  }
+</style>
+<script>
+  // apply a saved theme choice before the first paint
+  try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<main id="stage" aria-label="3D model">
+  <button id="banner" type="button">A new version of the model is ready. Load it</button>
+  <div id="empty"><p><strong>No model loaded yet.</strong></p><p>Ask your AI assistant to show a model and it will appear here.</p></div>
+  <div id="editor" role="dialog" aria-label="Add note">
+    <p class="where" id="where"></p>
+    <textarea id="text" rows="3" placeholder="What should change here?"></textarea>
+    <div class="row"><button class="btn" id="cancel" type="button">Cancel</button><button class="btn primary" id="save" type="button">Add note</button></div>
+  </div>
+  <div class="views" role="toolbar" aria-label="Camera">
+    <button type="button" data-view="iso" title="Isometric view">Iso</button><button type="button" data-view="top">Top</button>
+    <button type="button" data-view="front">Front</button><button type="button" data-view="side">Side</button>
+    <button type="button" data-view="fit" title="Fit the whole model, keep the current angle (F)">Fit</button>
+  </div>
+  <div class="help">Drag to rotate, right-drag to pan, scroll to zoom<br>Click the model to add a note, <kbd>F</kbd> to fit</div>
+</main>
+<aside aria-label="Review">
+  <header>
+    <div><h1 id="title">Model Review</h1><p id="summary">Waiting for a model</p></div>
+    <button id="theme" type="button"></button>
+  </header>
+  <section class="block"><h2>Parts</h2><ul id="parts"></ul></section>
+  <section class="block notes"><h2>Notes</h2><ol id="notes"></ol><p class="placeholder" id="no-notes">Click anywhere on the model to pin a note to that spot.</p></section>
+  <footer>
+    <h2><label for="overall">Overall note</label></h2>
+    <textarea id="overall" rows="3" placeholder="Anything about the design as a whole (optional)"></textarea>
+    <div class="row"><span id="status" role="status"></span><button class="btn primary" id="send" type="button">Send feedback</button></div>
+  </footer>
+</aside>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+// filament-like part colours that read well on the green mat
+const PART_COLOURS = ["#dfe3e0", "#8fa6bd", "#c9a66b", "#b4c2a6", "#c497ab", "#86aaa5", "#d9b9a0", "#9b9fc4"];
+const $ = (id) => document.getElementById(id);
+const stage = $("stage");
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+stage.prepend(renderer.domElement);
+const labels = new CSS2DRenderer();
+labels.domElement.style.cssText = "position:absolute; inset:0; pointer-events:none";
+stage.append(labels.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1e5);
+camera.up.set(0, 0, 1);  // printer files are Z-up
+scene.add(camera, new THREE.HemisphereLight("#ffffff", "#2a4a3e", 1.5));
+const key = new THREE.DirectionalLight("#ffffff", 1.9);
+key.position.set(0.6, 1, 1.4); camera.add(key);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const model = new THREE.Group(), pins = new THREE.Group(), grid = new THREE.Group();
+scene.add(grid, model, pins);
+const box = new THREE.Box3();
+let notes = [], draft = null, version = 0, focused = null, offsets = {};
+
+function resize() {
+  const { clientWidth: w, clientHeight: h } = stage;
+  renderer.setSize(w, h); labels.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---- camera views --------------------------------------------------------
+const DIRS = { iso: [1, -1.35, 0.95], top: [0, -0.0001, 1], front: [0, -1, 0.0001], side: [1, 0, 0.0001] };
+function setView(name) {
+  const size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
+  const radius = size.length() / 2 || 50;
+  // "fit" keeps the current viewing angle; the named views jump to a fixed direction
+  const dir = name === "fit" ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(...DIRS[name]).normalize();
+  controls.target.copy(centre);
+  // fit the bounding sphere in whichever field of view is narrower (portrait screens: the horizontal one)
+  const vfov = THREE.MathUtils.degToRad(camera.fov), hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+  camera.position.copy(centre).addScaledVector(dir, radius / Math.sin(Math.min(vfov, hfov) / 2) * 1.05);
+  camera.near = radius / 200; camera.far = radius * 200; camera.updateProjectionMatrix();
+}
+document.querySelectorAll(".views button").forEach((b) => (b.onclick = () => setView(b.dataset.view)));
+addEventListener("keydown", (e) => { if (e.key.toLowerCase() === "f" && !/TEXTAREA|INPUT/.test(document.activeElement.tagName)) setView("fit"); });
+
+// 10 mm grid under the model as a scale reference, heavier every 50 mm
+function buildGrid() {
+  grid.clear();
+  const size = box.getSize(new THREE.Vector3()), centre = box.getCenter(new THREE.Vector3());
+  const span = Math.ceil((Math.max(size.x, size.y) * 1.6 + 40) / 50) * 50;
+  for (const [step, opacity] of [[10, 0.07], [50, 0.16]]) {
+    const g = new THREE.GridHelper(span, span / step, "#ffffff", "#ffffff");
+    g.material.transparent = true; g.material.opacity = opacity; g.material.depthWrite = false;
+    g.rotation.x = Math.PI / 2;
+    g.position.set(Math.round(centre.x / 50) * 50, Math.round(centre.y / 50) * 50, box.min.z - 0.05);
+    grid.add(g);
+  }
+}
+
+// ---- loading -------------------------------------------------------------
+async function load() {
+  const meta = await (await fetch("/meta")).json();
+  version = meta.version;
+  offsets = meta.offsets ?? {};
+  if (!version) { $("empty").style.display = "grid"; return; }
+  $("title").textContent = meta.title;
+  document.title = `${meta.title} - Model Review`;
+  $("summary").textContent = meta.parts.length === 1 ? "1 part" : `${meta.parts.length} parts`;
+  const gltf = await new GLTFLoader().loadAsync(`/model.glb?v=${version}`);
+  // GLTFLoader sanitises node names ("a / b" -> "a__b"); map them back to the real part names
+  const real = Object.fromEntries(meta.parts.map((n) => [THREE.PropertyBinding.sanitizeNodeName(n), n]));
+  let i = 0;
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.name = real[o.name] ?? o.name;
+    const colour = meta.colours?.[o.name] ?? PART_COLOURS[i % PART_COLOURS.length];  // filament colour from the project when known
+    i++;
+    o.material = new THREE.MeshStandardMaterial({ color: colour, roughness: 0.7, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+    const li = document.createElement("li");
+    li.innerHTML = `<label><input type="checkbox" checked><span class="swatch"></span><span></span></label>`;
+    li.querySelector(".swatch").style.background = colour;
+    li.querySelector("span:last-child").textContent = o.name;
+    li.querySelector("input").onchange = (e) => (o.visible = e.target.checked);
+    $("parts").append(li);
+  });
+  model.add(gltf.scene);
+  box.setFromObject(model);
+  buildGrid(); setView("iso");
+}
+
+// ---- pins and notes ------------------------------------------------------
+function makePin(point, label) {
+  const el = document.createElement("div");
+  el.className = "pin new"; el.textContent = label;
+  const pin = new THREE.Group();
+  pin.position.copy(point);
+  pin.add(new CSS2DObject(el));
+  pins.add(pin);
+  pin.el = el;
+  return pin;
+}
+const dropPin = (pin) => { pins.remove(pin); pin.el.remove(); };
+const fmt = (p) => `x ${p[0].toFixed(1)}  y ${p[1].toFixed(1)}  z ${p[2].toFixed(1)} mm`;
+const round = (v) => [v.x, v.y, v.z].map((x) => +x.toFixed(2));
+// position in the part's own file (files shown side by side were shifted by the server)
+const filePoint = (point, part) => round(point.clone().sub(new THREE.Vector3(...(offsets[part] ?? [0, 0, 0]))));
+
+let downAt = null;
+renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; renderer.domElement.classList.add("dragging"); });
+addEventListener("pointerup", () => renderer.domElement.classList.remove("dragging"));
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!downAt || e.button !== 0 || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects(model.children, true).find((h) => h.object.visible);
+  if (!hit) return;
+  closeEditor();
+  draft = { point: hit.point.clone(), normal: hit.face.normal.clone().transformDirection(hit.object.matrixWorld), part: hit.object.name };
+  draft.pin = makePin(draft.point, notes.length + 1);
+  draft.pin.el.classList.add("draft");
+  $("where").textContent = `${draft.part}, ${fmt(filePoint(draft.point, draft.part))}`;
+  const ed = $("editor");
+  ed.style.left = Math.max(8, Math.min(e.clientX - rect.left + 14, rect.width - 290)) + "px";
+  ed.style.top = Math.max(8, Math.min(e.clientY - rect.top + 14, rect.height - 170)) + "px";
+  ed.style.display = "block"; $("text").value = ""; $("text").focus();
+});
+
+function closeEditor() {
+  $("editor").style.display = "none";
+  if (draft) dropPin(draft.pin);
+  draft = null;
+}
+$("cancel").onclick = closeEditor;
+$("text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("save").click(); }
+  if (e.key === "Escape") closeEditor();
+});
+$("save").onclick = () => {
+  const text = $("text").value.trim();
+  if (!text) return closeEditor();
+  const note = { ...draft, text };
+  note.pin.el.classList.remove("draft");
+  note.pin.el.onclick = () => focusNote(note);
+  notes.push(note);
+  draft = null; $("editor").style.display = "none";
+  note.image = snapshot(note);  // the view as the user saw it while placing the note
+  renderNotes(); $("status").textContent = "";
+};
+
+function focusNote(note) {
+  focused?.pin.el.classList.remove("focus");
+  focused = note; note.pin.el.classList.add("focus");
+  controls.target.copy(note.point);
+}
+
+function renderNotes() {
+  const list = $("notes"); list.innerHTML = "";
+  $("no-notes").style.display = notes.length ? "none" : "block";
+  notes.forEach((n, i) => {
+    n.pin.el.textContent = i + 1;
+    const li = document.createElement("li");
+    li.innerHTML = `<button class="num" type="button"></button><div><p class="text"></p><p class="meta"></p></div><button class="remove" type="button">×</button>`;
+    li.querySelector(".num").textContent = i + 1;
+    li.querySelector(".num").setAttribute("aria-label", `Show note ${i + 1} on the model`);
+    li.querySelector(".num").onclick = () => focusNote(n);
+    li.querySelector(".text").textContent = n.text;
+    li.querySelector(".meta").textContent = `${n.part}, ${fmt(filePoint(n.point, n.part))}`;
+    li.querySelector(".remove").setAttribute("aria-label", `Remove note ${i + 1}`);
+    li.querySelector(".remove").onclick = () => { dropPin(n.pin); notes.splice(i, 1); renderNotes(); };
+    list.append(li);
+  });
+}
+
+// WebGL frame plus the numbered tags drawn on top, so the assistant sees exactly what the user saw
+function snapshot(focus) {
+  renderer.render(scene, camera);
+  const src = renderer.domElement, c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext("2d"), s = devicePixelRatio;
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mat").trim(); g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(src, 0, 0);
+  g.font = `600 ${15 * s}px "Barlow Condensed", sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+  notes.forEach((n, i) => {
+    const p = n.point.clone().project(camera);
+    if (p.z > 1) return;
+    const x = (p.x + 1) / 2 * c.width, y = (1 - p.y) / 2 * c.height;
+    g.fillStyle = n === focus ? "#ffffff" : "#f4c430";
+    g.beginPath(); g.arc(x, y, 4 * s, 0, 7); g.fill();
+    g.beginPath(); g.roundRect(x, y - 24 * s, 26 * s, 24 * s, [12 * s, 12 * s, 12 * s, 3 * s]); g.fill();
+    g.fillStyle = "#1b1a12"; g.fillText(String(i + 1), x + 13 * s, y - 12 * s);
+  });
+  return c.toDataURL("image/jpeg", 0.85);
+}
+
+$("send").onclick = async () => {
+  const overall = $("overall").value.trim();
+  const status = $("status");
+  status.classList.remove("error");
+  if (!notes.length && !overall) { status.textContent = "Add a note on the model or an overall note first."; return; }
+  $("send").disabled = true;
+  const body = {
+    overall,
+    view: snapshot(null),
+    notes: notes.map((n, i) => ({ n: i + 1, text: n.text, part: n.part, point: filePoint(n.point, n.part), normal: round(n.normal), image: n.image })),
+  };
+  try {
+    const res = await fetch("/comments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(await res.text());
+    status.textContent = `Sent ${notes.length === 1 ? "1 note" : `${notes.length} notes`}. Your assistant can read them now.`;
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = `Not sent: ${err.message}. Check that your assistant's session is still running.`;
+  } finally { $("send").disabled = false; }
+};
+
+// a new show_model call bumps the version: reload when nothing is in progress, otherwise offer it
+setInterval(async () => {
+  try {
+    const meta = await (await fetch("/meta")).json();
+    if (meta.version === version) return;
+    if (notes.length || draft || $("overall").value.trim()) $("banner").style.display = "block";
+    else location.reload();
+  } catch { /* server gone; keep the page as it is */ }
+}, 2000);
+$("banner").onclick = () => location.reload();
+
+// theme button: Auto (follow the system) -> Light -> Dark -> Auto
+const THEMES = {
+  auto: ["Auto", '<path d="M12 3a9 9 0 1 0 0 18z" fill="currentColor"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>'],
+  light: ["Light", '<circle cx="12" cy="12" r="4.5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></g>'],
+  dark: ["Dark", '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" fill="currentColor"/>'],
+};
+function showTheme() {
+  const mode = document.documentElement.dataset.theme || "auto", [label, icon] = THEMES[mode];
+  $("theme").innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}`;
+  $("theme").setAttribute("aria-label", `Theme: ${label}${mode === "auto" ? " (follows your system)" : ""}. Click to change`);
+  $("theme").title = mode === "auto" ? "Follows your system setting" : `${label} theme`;
+}
+$("theme").onclick = () => {
+  const next = { auto: "light", light: "dark", dark: "auto" }[document.documentElement.dataset.theme || "auto"];
+  if (next === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = next;
+  try { next === "auto" ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch {}
+  showTheme();
+};
+showTheme();
+
+resize();
+load();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); labels.render(scene, camera); });
+</script>
+</body>
+</html>

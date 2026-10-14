@@ -1,0 +1,26 @@
+[project]
+name = "model-review-mcp"
+version = "1.0.0"
+description = "MCP server: review 3D models (STL, 3MF, Bambu Studio projects) with your AI assistant by pinning notes to the model"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Rovey" }]
+keywords = ["mcp", "model-context-protocol", "3d-printing", "stl", "3mf", "bambu-studio", "threejs"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+dependencies = ["mcp>=2.3,<3", "trimesh>=4", "numpy"]
+
+[project.urls]
+Repository = "https://github.com/Rovey/model-review-mcp"
+
+[project.scripts]
+model-review-mcp = "model_review_mcp.server:main"
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
