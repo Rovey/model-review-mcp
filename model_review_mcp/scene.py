@@ -1,5 +1,5 @@
 """Model loading: the 3MF reader and the scene that lays several files out side by side."""
-import json, re, zipfile
+import functools, json, re, zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -10,6 +10,86 @@ CORE = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
 PROD = "{http://schemas.microsoft.com/3dmanufacturing/production/2015/06}"
 
 
+MAIN_MODEL = "/3D/3dmodel.model"
+
+
+def read_matrix(transform: str | None) -> np.ndarray:
+    """Return a 4x4 matrix for a 3MF transform attribute; identity when it is missing."""
+    m = np.eye(4)
+    if transform:  # 3MF stores a row-vector 4x3 matrix: "m00 m01 m02 m10 ... m32"
+        m[:3, :] = np.array(transform.split(), dtype=float).reshape(4, 3).T
+    return m
+
+
+def metadata_value(element, key: str) -> str | None:
+    """Return the value of the slicer `<metadata key=... value=...>` child with this key."""
+    return next((m.get("value") for m in element.findall("metadata") if m.get("key") == key), None)
+
+
+def read_object_settings(z: zipfile.ZipFile) -> tuple[dict, dict, dict]:
+    """Read object names, part names and extruders from the Bambu Studio / OrcaSlicer metadata.
+
+    Returns three dicts keyed by object id: the object name, {part id: part name} and
+    {part id: extruder}, where the key None holds the object's own extruder.
+    """
+    names, parts, extruders = {}, {}, {}
+    if "Metadata/model_settings.config" in z.namelist():
+        for o in ET.fromstring(z.read("Metadata/model_settings.config")).iter("object"):
+            oid = o.get("id")
+            names[oid] = metadata_value(o, "name")
+            parts[oid] = {pt.get("id"): metadata_value(pt, "name") for pt in o.iter("part")}
+            # a part without its own extruder prints with the object's
+            extruders[oid] = {pt.get("id"): metadata_value(pt, "extruder") or metadata_value(o, "extruder")
+                              for pt in o.iter("part")}
+            extruders[oid][None] = metadata_value(o, "extruder")
+    return names, parts, extruders
+
+
+def read_filament_colours(z: zipfile.ZipFile) -> list[str]:
+    """Return the filament colours of the slicer project, indexed by extruder number - 1."""
+    if "Metadata/project_settings.config" in z.namelist():
+        return json.loads(z.read("Metadata/project_settings.config")).get("filament_colour", [])
+    return []
+
+
+def read_mesh(mesh) -> trimesh.Trimesh:
+    """Build a mesh from a 3MF `<mesh>` element, keeping vertices and faces as stored."""
+    v = np.array([[float(e.get(a)) for a in "xyz"] for e in mesh.iter(CORE + "vertex")])
+    f = np.array([[int(e.get(a)) for a in ("v1", "v2", "v3")] for e in mesh.iter(CORE + "triangle")])
+    return trimesh.Trimesh(v, f, process=False)
+
+
+def walk_meshes(model_file, path: str, oid: str, transform: np.ndarray, part_id: str | None):
+    """Yield (part id, mesh in plate coordinates) for every mesh below an object, following components.
+
+    `model_file(path)` returns ({object id: <object>}, root) for a model file in the archive. A
+    component may point into another model file; its object id becomes the part id.
+    """
+    o = model_file(path)[0][oid]
+    mesh = o.find(CORE + "mesh")
+    if mesh is not None:
+        yield part_id, read_mesh(mesh).apply_transform(transform)
+        return
+    for c in o.iter(CORE + "component"):
+        yield from walk_meshes(model_file, c.get(PROD + "path") or path, c.get("objectid"),
+                               transform @ read_matrix(c.get("transform")), c.get("objectid"))
+
+
+def part_label(object_name: str, part_name: str, only_part: bool) -> str:
+    """Name a part for the viewer: the object name alone for a single part, else object and part."""
+    if only_part:
+        return object_name
+    if part_name.startswith(object_name):  # Bambu often names parts after the object
+        return part_name
+    return f"{object_name} / {part_name}"
+
+
+def part_colour(object_extruders: dict, part_id: str | None, colours: list[str]) -> str | None:
+    """Return the filament colour of the part's extruder (or the object's), if the project has one."""
+    ext = object_extruders.get(part_id) or object_extruders.get(None)
+    return colours[int(ext) - 1] if ext and 0 < int(ext) <= len(colours) else None
+
+
 def load_3mf(path: Path) -> list[tuple[str, trimesh.Trimesh, str | None]]:
     """Return (name, mesh in plate coordinates, filament colour) for every part of every build item.
 
@@ -18,63 +98,23 @@ def load_3mf(path: Path) -> list[tuple[str, trimesh.Trimesh, str | None]]:
     Part names and filament colours come from the Bambu Studio / OrcaSlicer metadata when present.
     """
     z = zipfile.ZipFile(path)
-    docs = {}
 
-    def objects(p):
-        if p not in docs:
-            root = ET.fromstring(z.read(p.lstrip("/")))
-            docs[p] = {o.get("id"): o for o in root.iter(CORE + "object")}, root
-        return docs[p][0]
+    @functools.cache
+    def model_file(p):
+        root = ET.fromstring(z.read(p.lstrip("/")))
+        return {o.get("id"): o for o in root.iter(CORE + "object")}, root
 
-    def matrix(s):
-        m = np.eye(4)
-        if s:  # 3MF stores a row-vector 4x3 matrix: "m00 m01 m02 m10 ... m32"
-            m[:3, :] = np.array(s.split(), dtype=float).reshape(4, 3).T
-        return m
-
-    names, parts, extruders, colours = {}, {}, {}, []
-    if "Metadata/model_settings.config" in z.namelist():
-        meta = lambda e, key: next((m.get("value") for m in e.findall("metadata") if m.get("key") == key), None)
-        for o in ET.fromstring(z.read("Metadata/model_settings.config")).iter("object"):
-            oid = o.get("id")
-            names[oid] = meta(o, "name")
-            parts[oid] = {pt.get("id"): meta(pt, "name") for pt in o.iter("part")}
-            # a part without its own extruder prints with the object's
-            extruders[oid] = {pt.get("id"): meta(pt, "extruder") or meta(o, "extruder") for pt in o.iter("part")}
-            extruders[oid][None] = meta(o, "extruder")
-    if "Metadata/project_settings.config" in z.namelist():
-        colours = json.loads(z.read("Metadata/project_settings.config")).get("filament_colour", [])
-
+    names, part_names, extruders = read_object_settings(z)
+    colours = read_filament_colours(z)
     out = []
-
-    def walk(p, oid, t, part_id):
-        o = objects(p)[oid]
-        mesh = o.find(CORE + "mesh")
-        if mesh is not None:
-            v = np.array([[float(e.get(a)) for a in "xyz"] for e in mesh.iter(CORE + "vertex")])
-            f = np.array([[int(e.get(a)) for a in ("v1", "v2", "v3")] for e in mesh.iter(CORE + "triangle")])
-            out.append((part_id, trimesh.Trimesh(v, f, process=False).apply_transform(t)))
-            return
-        for c in o.iter(CORE + "component"):
-            walk(c.get(PROD + "path") or p, c.get("objectid"), t @ matrix(c.get("transform")), c.get("objectid"))
-
-    main = "/3D/3dmodel.model"
-    objects(main)
-    for i, item in enumerate(docs[main][1].iter(CORE + "item")):
-        start, oid = len(out), item.get("objectid")
-        walk(main, oid, matrix(item.get("transform")), None)
+    for i, item in enumerate(model_file(MAIN_MODEL)[1].iter(CORE + "item")):
+        oid = item.get("objectid")
+        found = list(walk_meshes(model_file, MAIN_MODEL, oid, read_matrix(item.get("transform")), None))
         object_name = names.get(oid) or f"Object {i + 1}"
-        for k in range(start, len(out)):
-            part_name = parts.get(oid, {}).get(out[k][0]) or f"part {out[k][0]}"
-            if len(out) - start == 1:
-                label = object_name
-            elif part_name.startswith(object_name):  # Bambu often names parts after the object
-                label = part_name
-            else:
-                label = f"{object_name} / {part_name}"
-            ext = extruders.get(oid, {}).get(out[k][0]) or extruders.get(oid, {}).get(None)
-            colour = colours[int(ext) - 1] if ext and 0 < int(ext) <= len(colours) else None
-            out[k] = (label, out[k][1], colour)
+        for part_id, mesh in found:
+            part_name = part_names.get(oid, {}).get(part_id) or f"part {part_id}"
+            out.append((part_label(object_name, part_name, len(found) == 1), mesh,
+                        part_colour(extruders.get(oid, {}), part_id, colours)))
     return out
 
 
